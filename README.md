@@ -1,22 +1,42 @@
-# RD Silver Line Partner Portal
+# Silver Line Streamlit Portal
 
-A Streamlit prototype for managing RD Electronics' Silver Line referral partner program.
+A full Streamlit + SQLite portal for RD Electronics Silver Line partner referrals.
 
 ## Features
-- Register Silver Line partners
-- Auto-generate partner codes
-- Add referrals and leads
-- Track closed sales
-- Calculate Rs. 1,000 commission per closed sale
-- View dashboard KPIs
-- Export partner, referral and commission reports
 
-## How to Run
+- Admin login
+- Partner login with unique partner code and password
+- Admin dashboard with KPIs, charts, leaderboard and CSV export
+- Admin can add partners and generate partner login codes
+- Admin can add referrals for any partner
+- Partner can add customer referrals
+- Partner can view own referrals and commission status
+- SQLite database created automatically on first run
+
+## Demo Login
+
+Admin:
+
+- Username: `admin`
+- Password: `admin123`
+
+Demo partner passwords are `partner001`, `partner002`, etc. Their usernames are their partner codes, visible inside the admin partner directory.
+
+## Run Locally
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Default Commission Logic
-Commission is fixed at Rs. 1,000 when sale status is "Closed Sale".
+## Deploy on Streamlit Cloud
+
+1. Create a GitHub repository.
+2. Upload `app.py`, `requirements.txt`, `database.sql`, and this README.
+3. Go to Streamlit Cloud.
+4. Select your repo and set main file as `app.py`.
+5. Deploy.
+
+## Important
+
+Change the default admin password before using it with real data. This demo stores data in local SQLite. For serious production use, connect PostgreSQL/Supabase/MySQL instead.

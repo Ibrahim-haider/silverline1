@@ -1,242 +1,407 @@
-
-import streamlit as st
-import pandas as pd
 import sqlite3
-from datetime import datetime
+import hashlib
+import secrets
+from datetime import date, datetime
 from pathlib import Path
 
-DB_PATH = Path("silver_line.db")
+import pandas as pd
+import streamlit as st
 
-PARTNER_TYPES = [
-    "Community Partner - Grocery Shop",
-    "Community Partner - Barber Shop",
-    "Community Partner - Gym",
-    "Community Partner - Car Wash / Detailing",
-    "Professional Partner - AC Technician",
-    "Professional Partner - Property Dealer",
-    "Professional Partner - Furniture Store",
-    "Professional Partner - Appliance Repair Shop",
-    "Professional Partner - Builder / Contractor",
-    "Institutional Partner - Employer Partnership",
-    "Institutional Partner - Housing Society Activation",
-    "Institutional Partner - School / University / Bank / Factory / Hospital"
+DB_PATH = Path(__file__).with_name("silverline.db")
+ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "admin123"
+COMMISSION_DEFAULT = 1000
+
+CATEGORIES = {
+    "ac": "AC technician",
+    "property": "Property dealer",
+    "grocery": "Grocery store",
+    "gym": "Gym",
+    "barber": "Barber shop",
+    "carwash": "Car wash/detailing",
+    "society": "Housing society stall",
+    "employer": "Employer partnership",
+}
+PRODUCTS = [
+    "Split AC 1.5 Ton",
+    "Refrigerator 18cft",
+    "Washing Machine",
+    "Microwave Oven",
+    "LED TV 43 inch",
+    "Water Dispenser",
+    "Air Fryer",
+    "Blender",
+    "Other",
 ]
+STATUSES = ["Pending", "Closed", "Lost"]
 
-SALE_STATUSES = ["Lead", "In Follow-up", "Closed Sale", "Rejected", "Cancelled"]
+st.set_page_config(page_title="Silver Line Portal", page_icon="⚡", layout="wide")
 
-def connect():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
-
-def init_db():
-    con = connect()
-    cur = con.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS partners (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        partner_code TEXT UNIQUE,
-        partner_name TEXT,
-        contact_person TEXT,
-        phone TEXT,
-        city TEXT,
-        area TEXT,
-        partner_type TEXT,
-        status TEXT,
-        created_at TEXT
-    )
-    """)
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS referrals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        partner_code TEXT,
-        customer_name TEXT,
-        customer_phone TEXT,
-        product_interest TEXT,
-        branch TEXT,
-        sale_value REAL,
-        commission REAL,
-        sale_status TEXT,
-        payment_status TEXT,
-        created_at TEXT
-    )
-    """)
-    con.commit()
-    con.close()
-
-def run_query(query, params=(), fetch=False):
-    con = connect()
-    if fetch:
-        df = pd.read_sql_query(query, con, params=params)
-        con.close()
-        return df
-    cur = con.cursor()
-    cur.execute(query, params)
-    con.commit()
-    con.close()
-
-def generate_partner_code(city, partner_type, partner_id):
-    city_code = "".join([c for c in city.upper() if c.isalpha()])[:3] or "RD"
-    type_code = partner_type.split("-")[-1].strip().split()[0].upper()[:3]
-    return f"SL-{city_code}-{type_code}-{partner_id:04d}"
-
-def add_partner(partner_name, contact_person, phone, city, area, partner_type, status):
-    con = connect()
-    cur = con.cursor()
-    cur.execute("""
-        INSERT INTO partners(partner_code, partner_name, contact_person, phone, city, area, partner_type, status, created_at)
-        VALUES(?,?,?,?,?,?,?,?,?)
-    """, ("TEMP", partner_name, contact_person, phone, city, area, partner_type, status, datetime.now().strftime("%Y-%m-%d %H:%M")))
-    partner_id = cur.lastrowid
-    code = generate_partner_code(city, partner_type, partner_id)
-    cur.execute("UPDATE partners SET partner_code=? WHERE id=?", (code, partner_id))
-    con.commit()
-    con.close()
-    return code
-
-def add_referral(partner_code, customer_name, customer_phone, product_interest, branch, sale_value, sale_status):
-    commission = 1000 if sale_status == "Closed Sale" else 0
-    payment_status = "Pending" if sale_status == "Closed Sale" else ""
-    run_query("""
-        INSERT INTO referrals(partner_code, customer_name, customer_phone, product_interest, branch, sale_value, commission, sale_status, payment_status, created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)
-    """, (partner_code, customer_name, customer_phone, product_interest, branch, sale_value, commission, sale_status, payment_status, datetime.now().strftime("%Y-%m-%d %H:%M")))
-
-def get_partners():
-    return run_query("SELECT * FROM partners ORDER BY id DESC", fetch=True)
-
-def get_referrals():
-    return run_query("SELECT * FROM referrals ORDER BY id DESC", fetch=True)
-
-def format_money(x):
-    return f"Rs. {x:,.0f}"
-
-init_db()
-
-st.set_page_config(page_title="RD Silver Line Portal", layout="wide")
-st.title("RD Silver Line Partner Portal")
-st.caption("Referral partner management system for RD Electronics")
-
-menu = st.sidebar.radio(
-    "Navigation",
-    ["Dashboard", "Add Partner", "Add Referral / Lead", "Partners", "Referrals", "Commission Report"]
+st.markdown(
+    """
+    <style>
+    .stApp { background:#11151b; color:#eef1f4; }
+    [data-testid="stSidebar"] { background:#171b22; }
+    div[data-testid="stMetric"] { background:#1b2028; border:1px solid #2a303a; border-radius:14px; padding:16px; }
+    .silver-card { background:#1b2028; border:1px solid #2a303a; border-radius:14px; padding:18px; margin-bottom:12px; }
+    .small-muted { color:#9aa4af; font-size:0.9rem; }
+    .success-badge { color:#4FAE7C; font-weight:700; }
+    .pending-badge { color:#D9A94A; font-weight:700; }
+    .lost-badge { color:#D9614A; font-weight:700; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-partners = get_partners()
-referrals = get_referrals()
 
-if menu == "Dashboard":
-    total_partners = len(partners)
-    total_leads = len(referrals)
-    closed = referrals[referrals["sale_status"] == "Closed Sale"] if not referrals.empty else referrals
-    total_sales = closed["sale_value"].sum() if not closed.empty else 0
-    total_commission = closed["commission"].sum() if not closed.empty else 0
-    conversion = (len(closed) / total_leads * 100) if total_leads else 0
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Active Partners", total_partners)
-    c2.metric("Total Leads", total_leads)
-    c3.metric("Closed Sales", len(closed))
-    c4.metric("Sales Generated", format_money(total_sales))
-    c5.metric("Conversion Rate", f"{conversion:.1f}%")
 
-    st.divider()
+def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
+    salt = salt or secrets.token_hex(16)
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
+    return salt, hashed
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Sales by Partner Type")
-        if not referrals.empty and not partners.empty:
-            merged = referrals.merge(partners[["partner_code", "partner_type"]], on="partner_code", how="left")
-            chart = merged[merged["sale_status"]=="Closed Sale"].groupby("partner_type")["sale_value"].sum().reset_index()
-            if not chart.empty:
-                st.bar_chart(chart, x="partner_type", y="sale_value")
+
+def verify_password(password: str, salt: str, stored_hash: str) -> bool:
+    _, check_hash = hash_password(password, salt)
+    return secrets.compare_digest(check_hash, stored_hash)
+
+
+def run_query(query: str, params: tuple = (), fetch: bool = False):
+    with get_conn() as conn:
+        cur = conn.execute(query, params)
+        conn.commit()
+        if fetch:
+            return cur.fetchall()
+        return None
+
+
+def generate_partner_code(category: str, name: str) -> str:
+    prefix = {
+        "ac": "AC",
+        "property": "PR",
+        "grocery": "GR",
+        "gym": "GY",
+        "barber": "BB",
+        "carwash": "CW",
+        "society": "HS",
+        "employer": "EP",
+    }.get(category, "PT")
+    clean = "".join(ch for ch in name.upper() if ch.isalnum())[:6] or "PARTNR"
+    count = run_query("SELECT COUNT(*) AS total FROM partners", fetch=True)[0]["total"] + 1
+    return f"SL-{prefix}-{clean}{count:02d}"
+
+
+def create_tables():
+    run_query(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin','partner')),
+            partner_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(partner_id) REFERENCES partners(id)
+        );
+        """
+    )
+    run_query(
+        """
+        CREATE TABLE IF NOT EXISTS partners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            code TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            area TEXT,
+            contact_person TEXT,
+            joined_date TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1
+        );
+        """
+    )
+    run_query(
+        """
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            partner_id INTEGER NOT NULL,
+            customer_name TEXT NOT NULL,
+            customer_phone TEXT,
+            product TEXT NOT NULL,
+            product_amount REAL DEFAULT 0,
+            commission_amount REAL DEFAULT 1000,
+            status TEXT DEFAULT 'Pending' CHECK(status IN ('Pending','Closed','Lost')),
+            referral_date TEXT NOT NULL,
+            notes TEXT,
+            added_by TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(partner_id) REFERENCES partners(id)
+        );
+        """
+    )
+
+
+def seed_data():
+    admin_exists = run_query("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,), fetch=True)
+    if not admin_exists:
+        salt, hashed = hash_password(DEFAULT_ADMIN_PASSWORD)
+        run_query(
+            "INSERT INTO users(username,password_salt,password_hash,role) VALUES(?,?,?,?)",
+            (ADMIN_USERNAME, salt, hashed, "admin"),
+        )
+
+    partners_exist = run_query("SELECT COUNT(*) AS total FROM partners", fetch=True)[0]["total"]
+    if partners_exist == 0:
+        demo_partners = [
+            ("Imran Cool Care", "ac", "0301-2223344", "Gulberg", "Imran", "partner001"),
+            ("Al-Habib Estates", "property", "0321-5556677", "DHA", "Habib", "partner002"),
+            ("Al-Fateh Grocers", "grocery", "0345-1231234", "Model Town", "Fateh", "partner003"),
+            ("Iron Gym Gulberg", "gym", "0322-7897890", "Gulberg", "Manager", "partner004"),
+            ("Style Cutz Barber", "barber", "0334-6546543", "Johar Town", "Ali", "partner005"),
+        ]
+        for name, category, phone, area, person, password in demo_partners:
+            code = generate_partner_code(category, name)
+            run_query(
+                "INSERT INTO partners(name,category,code,phone,area,contact_person,joined_date) VALUES(?,?,?,?,?,?,?)",
+                (name, category, code, phone, area, person, str(date.today())),
+            )
+            partner_id = run_query("SELECT id FROM partners WHERE code=?", (code,), fetch=True)[0]["id"]
+            salt, hashed = hash_password(password)
+            run_query(
+                "INSERT INTO users(username,password_salt,password_hash,role,partner_id) VALUES(?,?,?,?,?)",
+                (code, salt, hashed, "partner", partner_id),
+            )
+
+        demo_refs = [
+            (1, "Ahmed Raza", "0300-1111111", "Split AC 1.5 Ton", 125000, "Closed"),
+            (1, "Sana Malik", "0300-2222222", "Refrigerator 18cft", 155000, "Pending"),
+            (2, "Bilal Sheikh", "0300-3333333", "Washing Machine", 95000, "Closed"),
+            (3, "Fatima Noor", "0300-4444444", "LED TV 43 inch", 105000, "Lost"),
+            (4, "Usman Tariq", "0300-5555555", "Microwave Oven", 45000, "Closed"),
+            (5, "Ayesha Khan", "0300-6666666", "Water Dispenser", 38000, "Pending"),
+        ]
+        for partner_id, customer, phone, product, amount, status in demo_refs:
+            commission = 0 if status == "Lost" else COMMISSION_DEFAULT
+            run_query(
+                """
+                INSERT INTO referrals(partner_id,customer_name,customer_phone,product,product_amount,commission_amount,status,referral_date,notes,added_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (partner_id, customer, phone, product, amount, commission, status, str(date.today()), "Demo referral", "seed"),
+            )
+
+
+def init_db():
+    create_tables()
+    seed_data()
+
+
+def df(query: str, params: tuple = ()) -> pd.DataFrame:
+    with get_conn() as conn:
+        return pd.read_sql_query(query, conn, params=params)
+
+
+def login_screen():
+    st.title("⚡ Silver Line Partner Referral Portal")
+    st.caption("Admin and partner login for RD Electronics referrals")
+    with st.container(border=True):
+        username = st.text_input("Username / Partner Code")
+        password = st.text_input("Password", type="password")
+        if st.button("Login", type="primary", use_container_width=True):
+            rows = run_query("SELECT * FROM users WHERE username=?", (username.strip(),), fetch=True)
+            if rows and verify_password(password, rows[0]["password_salt"], rows[0]["password_hash"]):
+                st.session_state.user = dict(rows[0])
+                st.rerun()
             else:
-                st.info("No closed sales yet.")
-        else:
-            st.info("No sales data yet.")
+                st.error("Wrong username or password")
+    with st.expander("Demo logins"):
+        st.write("Admin: `admin` / `admin123`")
+        st.write("Partner examples: partner code shown in Admin panel / passwords `partner001`, `partner002`, etc.")
 
-    with col2:
-        st.subheader("Lead Status")
+
+def logout_button():
+    if st.sidebar.button("Logout"):
+        st.session_state.clear()
+        st.rerun()
+
+
+def add_referral_form(partner_id: int, added_by: str, form_key: str):
+    with st.form(form_key, clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        customer = c1.text_input("Customer name *")
+        phone = c2.text_input("Customer phone")
+        product = c1.selectbox("Product buying *", PRODUCTS)
+        amount = c2.number_input("Product amount (Rs)", min_value=0.0, step=1000.0)
+        status = c1.selectbox("Status", STATUSES)
+        commission = c2.number_input("Commission (Rs)", min_value=0.0, value=float(COMMISSION_DEFAULT), step=500.0)
+        referral_date = c1.date_input("Referral date", value=date.today())
+        notes = st.text_area("Notes")
+        submit = st.form_submit_button("Save referral", type="primary")
+    if submit:
+        if not customer.strip():
+            st.error("Customer name is required")
+        else:
+            final_commission = 0 if status == "Lost" else commission
+            run_query(
+                """
+                INSERT INTO referrals(partner_id,customer_name,customer_phone,product,product_amount,commission_amount,status,referral_date,notes,added_by)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                """,
+                (partner_id, customer.strip(), phone.strip(), product, amount, final_commission, status, str(referral_date), notes, added_by),
+            )
+            st.success("Referral saved")
+            st.rerun()
+
+
+def admin_dashboard():
+    st.title("Admin Portal")
+    logout_button()
+
+    partners = df("SELECT * FROM partners ORDER BY id DESC")
+    referrals = df(
+        """
+        SELECT r.*, p.name AS partner_name, p.category, p.code
+        FROM referrals r JOIN partners p ON r.partner_id=p.id
+        ORDER BY r.id DESC
+        """
+    )
+
+    total_partners = len(partners[partners["is_active"] == 1]) if not partners.empty else 0
+    total_referrals = len(referrals)
+    closed = referrals[referrals["status"] == "Closed"] if not referrals.empty else pd.DataFrame()
+    pending = referrals[referrals["status"] == "Pending"] if not referrals.empty else pd.DataFrame()
+    conversion = round((len(closed) / total_referrals) * 100, 1) if total_referrals else 0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Active partners", total_partners)
+    m2.metric("Total referrals", total_referrals)
+    m3.metric("Conversion", f"{conversion}%")
+    m4.metric("Commission paid", f"Rs {closed['commission_amount'].sum():,.0f}" if not closed.empty else "Rs 0")
+    m5.metric("Pending payout", f"Rs {pending['commission_amount'].sum():,.0f}" if not pending.empty else "Rs 0")
+
+    tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Add Referral", "Partners", "All Referrals"])
+
+    with tab1:
+        c1, c2 = st.columns(2)
         if not referrals.empty:
-            st.bar_chart(referrals["sale_status"].value_counts())
+            category_chart = referrals.groupby("category").size().reset_index(name="referrals")
+            category_chart["category"] = category_chart["category"].map(CATEGORIES).fillna(category_chart["category"])
+            c1.subheader("Referrals by category")
+            c1.bar_chart(category_chart, x="category", y="referrals")
+
+            leaderboard = referrals.groupby(["partner_id", "partner_name"]).agg(
+                referrals=("id", "count"),
+                closed=("status", lambda s: (s == "Closed").sum()),
+                commission=("commission_amount", "sum"),
+            ).reset_index().sort_values("closed", ascending=False)
+            c2.subheader("Partner leaderboard")
+            c2.dataframe(leaderboard[["partner_name", "referrals", "closed", "commission"]], use_container_width=True, hide_index=True)
         else:
-            st.info("No referral data yet.")
+            st.info("No referrals yet.")
 
-    st.subheader("Top Partners")
-    if not referrals.empty:
-        top = referrals[referrals["sale_status"]=="Closed Sale"].groupby("partner_code").agg(
-            closed_sales=("id","count"),
-            total_sales=("sale_value","sum"),
-            commission=("commission","sum")
-        ).reset_index().sort_values("total_sales", ascending=False).head(10)
-        st.dataframe(top, use_container_width=True)
-    else:
-        st.info("No partner performance data yet.")
-
-elif menu == "Add Partner":
-    st.subheader("Register Silver Line Partner")
-    with st.form("partner_form"):
-        partner_name = st.text_input("Partner / Business Name")
-        contact_person = st.text_input("Contact Person")
-        phone = st.text_input("Phone Number")
-        city = st.text_input("City")
-        area = st.text_input("Area / Location")
-        partner_type = st.selectbox("Partner Type", PARTNER_TYPES)
-        status = st.selectbox("Status", ["Active", "Inactive"])
-        submitted = st.form_submit_button("Create Partner")
-    if submitted:
-        if partner_name and phone and city:
-            code = add_partner(partner_name, contact_person, phone, city, area, partner_type, status)
-            st.success(f"Partner created successfully. Partner Code: {code}")
+    with tab2:
+        st.subheader("Admin add referral")
+        if partners.empty:
+            st.warning("Add a partner first.")
         else:
-            st.error("Partner name, phone and city are required.")
+            partner_labels = {f"{row['name']} — {row['code']}": int(row["id"]) for _, row in partners.iterrows()}
+            selected = st.selectbox("Select partner", list(partner_labels.keys()))
+            add_referral_form(partner_labels[selected], "admin", "admin_referral_form")
 
-elif menu == "Add Referral / Lead":
-    st.subheader("Register Referral / Lead")
-    if partners.empty:
-        st.warning("Add at least one partner first.")
-    else:
-        with st.form("referral_form"):
-            partner_code = st.selectbox("Partner Code", partners["partner_code"].tolist())
-            customer_name = st.text_input("Customer Name")
-            customer_phone = st.text_input("Customer Phone")
-            product_interest = st.text_input("Product Interest", placeholder="AC, Refrigerator, Washing Machine, LED etc.")
-            branch = st.text_input("Nearest RD Branch")
-            sale_value = st.number_input("Sale Value", min_value=0.0, step=1000.0)
-            sale_status = st.selectbox("Sale Status", SALE_STATUSES)
-            submitted = st.form_submit_button("Save Referral")
+    with tab3:
+        st.subheader("Add new partner")
+        with st.form("add_partner", clear_on_submit=True):
+            c1, c2 = st.columns(2)
+            name = c1.text_input("Partner business/name *")
+            category = c2.selectbox("Category", list(CATEGORIES.keys()), format_func=lambda x: CATEGORIES[x])
+            phone = c1.text_input("Phone")
+            area = c2.text_input("Area")
+            contact_person = c1.text_input("Contact person")
+            password = c2.text_input("Partner password *", type="password")
+            submitted = st.form_submit_button("Create partner login", type="primary")
         if submitted:
-            if customer_name and customer_phone:
-                add_referral(partner_code, customer_name, customer_phone, product_interest, branch, sale_value, sale_status)
-                st.success("Referral saved successfully.")
+            if not name.strip() or not password.strip():
+                st.error("Partner name and password are required")
             else:
-                st.error("Customer name and phone are required.")
+                code = generate_partner_code(category, name)
+                run_query(
+                    "INSERT INTO partners(name,category,code,phone,area,contact_person,joined_date) VALUES(?,?,?,?,?,?,?)",
+                    (name.strip(), category, code, phone.strip(), area.strip(), contact_person.strip(), str(date.today())),
+                )
+                partner_id = run_query("SELECT id FROM partners WHERE code=?", (code,), fetch=True)[0]["id"]
+                salt, hashed = hash_password(password)
+                run_query(
+                    "INSERT INTO users(username,password_salt,password_hash,role,partner_id) VALUES(?,?,?,?,?)",
+                    (code, salt, hashed, "partner", partner_id),
+                )
+                st.success(f"Partner created. Username/code: {code}")
+                st.rerun()
 
-elif menu == "Partners":
-    st.subheader("Silver Line Partners")
-    if not partners.empty:
-        st.dataframe(partners, use_container_width=True)
-        st.download_button("Download Partners CSV", partners.to_csv(index=False), "silver_line_partners.csv")
-    else:
-        st.info("No partners registered yet.")
+        st.subheader("Partner directory")
+        show = partners.copy()
+        if not show.empty:
+            show["category"] = show["category"].map(CATEGORIES).fillna(show["category"])
+            st.dataframe(show[["id", "name", "category", "code", "phone", "area", "contact_person", "joined_date", "is_active"]], use_container_width=True, hide_index=True)
 
-elif menu == "Referrals":
-    st.subheader("Referral / Lead Records")
-    if not referrals.empty:
-        status_filter = st.multiselect("Filter by status", SALE_STATUSES, default=SALE_STATUSES)
-        filtered = referrals[referrals["sale_status"].isin(status_filter)]
-        st.dataframe(filtered, use_container_width=True)
-        st.download_button("Download Referrals CSV", filtered.to_csv(index=False), "silver_line_referrals.csv")
-    else:
-        st.info("No referrals registered yet.")
+    with tab4:
+        st.subheader("All referrals")
+        if not referrals.empty:
+            status_filter = st.multiselect("Filter status", STATUSES, default=STATUSES)
+            shown = referrals[referrals["status"].isin(status_filter)]
+            st.dataframe(shown[["id", "partner_name", "code", "customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]], use_container_width=True, hide_index=True)
+            csv = shown.to_csv(index=False).encode("utf-8")
+            st.download_button("Download CSV", csv, "silverline_referrals.csv", "text/csv")
+        else:
+            st.info("No referrals yet.")
 
-elif menu == "Commission Report":
-    st.subheader("Commission Report")
-    if not referrals.empty:
-        report = referrals[referrals["sale_status"]=="Closed Sale"].groupby("partner_code").agg(
-            closed_sales=("id","count"),
-            total_sales=("sale_value","sum"),
-            commission_payable=("commission","sum")
-        ).reset_index().sort_values("commission_payable", ascending=False)
-        st.dataframe(report, use_container_width=True)
-        st.download_button("Download Commission Report", report.to_csv(index=False), "commission_report.csv")
+
+def partner_dashboard():
+    user = st.session_state.user
+    partner_id = int(user["partner_id"])
+    partner = run_query("SELECT * FROM partners WHERE id=?", (partner_id,), fetch=True)[0]
+    refs = df("SELECT * FROM referrals WHERE partner_id=? ORDER BY id DESC", (partner_id,))
+
+    st.title(f"Partner Portal — {partner['name']}")
+    st.caption(f"Referral code: {partner['code']}")
+    logout_button()
+
+    closed = refs[refs["status"] == "Closed"] if not refs.empty else pd.DataFrame()
+    pending = refs[refs["status"] == "Pending"] if not refs.empty else pd.DataFrame()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("My referrals", len(refs))
+    c2.metric("Closed sales", len(closed))
+    c3.metric("Commission earned", f"Rs {closed['commission_amount'].sum():,.0f}" if not closed.empty else "Rs 0")
+    c4.metric("Pending payout", f"Rs {pending['commission_amount'].sum():,.0f}" if not pending.empty else "Rs 0")
+
+    tab1, tab2 = st.tabs(["Add Referral", "My Referrals"])
+    with tab1:
+        st.subheader("Add customer referral")
+        add_referral_form(partner_id, partner["code"], "partner_referral_form")
+    with tab2:
+        st.subheader("Referral history")
+        if refs.empty:
+            st.info("You have not added any referrals yet.")
+        else:
+            st.dataframe(refs[["customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]], use_container_width=True, hide_index=True)
+
+
+def main():
+    init_db()
+    if "user" not in st.session_state:
+        login_screen()
+        return
+    role = st.session_state.user["role"]
+    if role == "admin":
+        admin_dashboard()
     else:
-        st.info("No commission data yet.")
+        partner_dashboard()
+
+
+if __name__ == "__main__":
+    main()
