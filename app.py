@@ -40,18 +40,111 @@ st.set_page_config(page_title="Silver Line Portal", page_icon="⚡", layout="wid
 st.markdown(
     """
     <style>
-    .stApp { background:#11151b; color:#eef1f4; }
-    [data-testid="stSidebar"] { background:#171b22; }
-    div[data-testid="stMetric"] { background:#1b2028; border:1px solid #2a303a; border-radius:14px; padding:16px; }
-    .silver-card { background:#1b2028; border:1px solid #2a303a; border-radius:14px; padding:18px; margin-bottom:12px; }
-    .small-muted { color:#9aa4af; font-size:0.9rem; }
-    .success-badge { color:#4FAE7C; font-weight:700; }
-    .pending-badge { color:#D9A94A; font-weight:700; }
-    .lost-badge { color:#D9614A; font-weight:700; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    .stApp {
+        background: radial-gradient(circle at top left, #283447 0, #121821 34%, #0b0f15 100%);
+        color:#eef3f8;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #101720 0%, #171f2b 100%);
+        border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    [data-testid="stSidebar"] .stButton>button {
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.04);
+    }
+    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+    .hero-card {
+        padding: 28px 30px;
+        border-radius: 24px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.035));
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 18px 55px rgba(0,0,0,0.28);
+        margin-bottom: 22px;
+    }
+    .hero-title { font-size: 2.15rem; font-weight: 800; margin: 0; letter-spacing: -0.04em; }
+    .hero-subtitle { color:#aab6c4; margin-top: 8px; font-size: 1rem; }
+    .role-pill {
+        display:inline-block; padding: 7px 12px; border-radius: 999px;
+        background: rgba(245, 192, 80, 0.16); color:#ffd27a;
+        border: 1px solid rgba(245, 192, 80, 0.28); font-weight: 700; font-size: .82rem;
+    }
+    div[data-testid="stMetric"] {
+        background: linear-gradient(135deg, rgba(255,255,255,.09), rgba(255,255,255,.035));
+        border:1px solid rgba(255,255,255,.10);
+        border-radius:18px;
+        padding:18px;
+        box-shadow: 0 14px 36px rgba(0,0,0,0.22);
+    }
+    div[data-testid="stMetric"] label { color:#aab6c4 !important; }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] { font-weight:800; color:#ffffff; }
+    .silver-card {
+        background: rgba(18,24,33,0.72);
+        border:1px solid rgba(255,255,255,0.10);
+        border-radius:18px;
+        padding:20px;
+        margin-bottom:16px;
+        box-shadow: 0 14px 32px rgba(0,0,0,0.18);
+    }
+    .section-title { font-size:1.15rem; font-weight:800; margin-bottom: 6px; }
+    .small-muted { color:#aab6c4; font-size:0.92rem; }
+    .status-closed { color:#68d391; font-weight:800; }
+    .status-pending { color:#f6c453; font-weight:800; }
+    .status-lost { color:#ff7a6b; font-weight:800; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        background: rgba(255,255,255,0.055);
+        border-radius: 999px;
+        padding: 10px 18px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .stTabs [aria-selected="true"] { background: rgba(245, 192, 80, 0.18); color:#ffd27a; }
+    .stTextInput input, .stNumberInput input, .stTextArea textarea { border-radius: 12px; }
+    .stSelectbox div[data-baseweb="select"] > div { border-radius: 12px; }
+    .stButton>button, .stDownloadButton>button, .stFormSubmitButton>button {
+        border-radius: 12px; font-weight: 700;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def hero(title: str, subtitle: str, role: str | None = None):
+    role_html = f'<span class="role-pill">{role}</span>' if role else ""
+    st.markdown(
+        f"""
+        <div class="hero-card">
+            {role_html}
+            <h1 class="hero-title">{title}</h1>
+            <div class="hero-subtitle">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def section_card(title: str, subtitle: str = ""):
+    st.markdown(
+        f'<div class="silver-card"><div class="section-title">{title}</div><div class="small-muted">{subtitle}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def format_currency(value: float) -> str:
+    return f"Rs {value:,.0f}"
+
+
+def prepare_referrals_table(data: pd.DataFrame) -> pd.DataFrame:
+    if data.empty:
+        return data
+    shown = data.copy()
+    for col in ["product_amount", "commission_amount", "commission"]:
+        if col in shown.columns:
+            shown[col] = shown[col].apply(lambda x: format_currency(float(x or 0)))
+    return shown
 
 
 def get_conn():
@@ -247,11 +340,23 @@ def df(query: str, params: tuple = ()) -> pd.DataFrame:
 
 
 def login_screen():
-    st.title("⚡ Silver Line Partner Referral Portal")
-    st.caption("Admin, branch manager, and partner login for RD Electronics referrals")
-    with st.container(border=True):
-        username = st.text_input("Username / Partner Code")
-        password = st.text_input("Password", type="password")
+    left, right = st.columns([1.2, 0.8], gap="large")
+    with left:
+        st.markdown("""
+        <div class="hero-card" style="min-height:360px; display:flex; flex-direction:column; justify-content:center;">
+            <span class="role-pill">RD Electronics Referral System</span>
+            <h1 class="hero-title">Silver Line Partner Portal</h1>
+            <div class="hero-subtitle">Track referrals, manage partners, and monitor branch performance from one clean dashboard.</div>
+            <br>
+            <div class="small-muted">Admin creates partners and managers. Branch managers add referrals and view the directory. Partners submit their own customer leads.</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with right:
+        st.markdown('<div class="silver-card">', unsafe_allow_html=True)
+        st.subheader("Sign in")
+        st.caption("Use your admin, branch manager, or partner credentials.")
+        username = st.text_input("Username / Partner Code", placeholder="admin, manager, or SL-...")
+        password = st.text_input("Password", type="password", placeholder="Enter password")
         if st.button("Login", type="primary", use_container_width=True):
             rows = run_query("SELECT * FROM users WHERE username=?", (username.strip(),), fetch=True)
             if rows and verify_password(password, rows[0]["password_salt"], rows[0]["password_hash"]):
@@ -259,14 +364,24 @@ def login_screen():
                 st.rerun()
             else:
                 st.error("Wrong username or password")
-    with st.expander("Demo logins"):
-        st.write("Admin: `admin` / `admin123`")
-        st.write("Branch manager: `manager` / `manager123`")
-        st.write("Partner examples: partner code shown in Admin panel / passwords `partner001`, `partner002`, etc.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
+        with st.expander("Demo logins"):
+            st.write("Admin: `admin` / `admin123`")
+            st.write("Branch manager: `manager` / `manager123`")
+            st.write("Partner examples: partner code shown in Admin panel / passwords `partner001`, `partner002`, etc.")
 
 def logout_button():
-    if st.sidebar.button("Logout"):
+    user = st.session_state.get("user", {})
+    role_label = str(user.get("role", "")).replace("_", " ").title()
+    st.sidebar.markdown("### ⚡ Silver Line")
+    st.sidebar.caption("Partner Referral Portal")
+    st.sidebar.divider()
+    if user:
+        st.sidebar.markdown(f"**Logged in as**  \n`{user.get('username', '')}`")
+        st.sidebar.markdown(f"**Role**  \n{role_label}")
+    st.sidebar.divider()
+    if st.sidebar.button("Logout", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
@@ -300,7 +415,7 @@ def add_referral_form(partner_id: int, added_by: str, form_key: str):
 
 
 def admin_dashboard():
-    st.title("Admin Portal")
+    hero("Admin Portal", "Create partners, branch managers, referrals, and monitor complete performance.", "Admin")
     logout_button()
 
     partners = df("SELECT * FROM partners ORDER BY id DESC")
@@ -346,7 +461,7 @@ def admin_dashboard():
             st.info("No referrals yet.")
 
     with tab2:
-        st.subheader("Admin add referral")
+        section_card("Admin add referral", "Choose a partner and enter customer lead details.")
         if partners.empty:
             st.warning("Add a partner first.")
         else:
@@ -355,7 +470,7 @@ def admin_dashboard():
             add_referral_form(partner_labels[selected], "admin", "admin_referral_form")
 
     with tab3:
-        st.subheader("Add new partner")
+        section_card("Add new partner", "Only admin can create new partner accounts.")
         with st.form("add_partner", clear_on_submit=True):
             c1, c2 = st.columns(2)
             name = c1.text_input("Partner business/name *")
@@ -384,7 +499,7 @@ def admin_dashboard():
                 st.rerun()
 
         st.divider()
-        st.subheader("Create branch manager login")
+        section_card("Create branch manager login", "Branch managers can add referrals and view directories, but cannot add partners.")
         with st.form("add_branch_manager", clear_on_submit=True):
             c1, c2 = st.columns(2)
             manager_username = c1.text_input("Branch manager username *")
@@ -406,18 +521,18 @@ def admin_dashboard():
                     st.success(f"Branch manager created. Username: {manager_username.strip()}")
                     st.rerun()
 
-        st.subheader("Partner directory")
+        section_card("Partner directory", "View all active and inactive partner details.")
         show = partners.copy()
         if not show.empty:
             show["category"] = show["category"].map(CATEGORIES).fillna(show["category"])
             st.dataframe(show[["id", "name", "category", "code", "phone", "area", "contact_person", "joined_date", "is_active"]], use_container_width=True, hide_index=True)
 
     with tab4:
-        st.subheader("All referrals")
+        section_card("All referrals", "Filter and review referral records.")
         if not referrals.empty:
             status_filter = st.multiselect("Filter status", STATUSES, default=STATUSES)
             shown = referrals[referrals["status"].isin(status_filter)]
-            st.dataframe(shown[["id", "partner_name", "code", "customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]], use_container_width=True, hide_index=True)
+            st.dataframe(prepare_referrals_table(shown[["id", "partner_name", "code", "customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]]), use_container_width=True, hide_index=True)
             csv = shown.to_csv(index=False).encode("utf-8")
             st.download_button("Download CSV", csv, "silverline_referrals.csv", "text/csv")
         else:
@@ -425,8 +540,7 @@ def admin_dashboard():
 
 
 def branch_manager_dashboard():
-    st.title("Branch Manager Portal")
-    st.caption("Can add referrals and view partner directory/dashboard. New partners can only be created by admin.")
+    hero("Branch Manager Portal", "Add referrals, view partner directory, and monitor sales performance. Partner creation remains admin-only.", "Branch Manager")
     logout_button()
 
     partners = df("SELECT * FROM partners ORDER BY id DESC")
@@ -472,7 +586,7 @@ def branch_manager_dashboard():
             st.info("No referrals yet.")
 
     with tab2:
-        st.subheader("Add referral")
+        section_card("Add referral", "Select the partner and submit customer lead details.")
         if partners.empty:
             st.warning("No partners available. Ask admin to create partners first.")
         else:
@@ -482,7 +596,7 @@ def branch_manager_dashboard():
             add_referral_form(partner_labels[selected], st.session_state.user["username"], "manager_referral_form")
 
     with tab3:
-        st.subheader("Partner directory")
+        section_card("Partner directory", "View all active and inactive partner details.")
         if partners.empty:
             st.info("No partners found.")
         else:
@@ -491,11 +605,11 @@ def branch_manager_dashboard():
             st.dataframe(show[["id", "name", "category", "code", "phone", "area", "contact_person", "joined_date", "is_active"]], use_container_width=True, hide_index=True)
 
     with tab4:
-        st.subheader("All referrals")
+        section_card("All referrals", "Filter and review referral records.")
         if not referrals.empty:
             status_filter = st.multiselect("Filter status", STATUSES, default=STATUSES, key="manager_status_filter")
             shown = referrals[referrals["status"].isin(status_filter)]
-            st.dataframe(shown[["id", "partner_name", "code", "customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes", "added_by"]], use_container_width=True, hide_index=True)
+            st.dataframe(prepare_referrals_table(shown[["id", "partner_name", "code", "customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes", "added_by"]]), use_container_width=True, hide_index=True)
         else:
             st.info("No referrals yet.")
 
@@ -506,8 +620,7 @@ def partner_dashboard():
     partner = run_query("SELECT * FROM partners WHERE id=?", (partner_id,), fetch=True)[0]
     refs = df("SELECT * FROM referrals WHERE partner_id=? ORDER BY id DESC", (partner_id,))
 
-    st.title(f"Partner Portal — {partner['name']}")
-    st.caption(f"Referral code: {partner['code']}")
+    hero(f"Partner Portal — {partner['name']}", f"Referral code: {partner['code']} • Submit and track your customer referrals.", "Partner")
     logout_button()
 
     closed = refs[refs["status"] == "Closed"] if not refs.empty else pd.DataFrame()
@@ -520,14 +633,14 @@ def partner_dashboard():
 
     tab1, tab2 = st.tabs(["Add Referral", "My Referrals"])
     with tab1:
-        st.subheader("Add customer referral")
+        section_card("Add customer referral", "Enter the customer and product details.")
         add_referral_form(partner_id, partner["code"], "partner_referral_form")
     with tab2:
-        st.subheader("Referral history")
+        section_card("Referral history", "Track your submitted leads and commission status.")
         if refs.empty:
             st.info("You have not added any referrals yet.")
         else:
-            st.dataframe(refs[["customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]], use_container_width=True, hide_index=True)
+            st.dataframe(prepare_referrals_table(refs[["customer_name", "customer_phone", "product", "product_amount", "commission_amount", "status", "referral_date", "notes"]]), use_container_width=True, hide_index=True)
 
 
 def main():
