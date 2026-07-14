@@ -182,15 +182,17 @@ def make_pdf(metrics, insights):
     return bio.getvalue()
 
 st.markdown('<div class="topbar">Executive Sales Intelligence Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="note"><b>Single-file workflow:</b> Upload only one Excel workbook. The app reads both the <code>Working Sheet</code> and <code>Raw Data</code> tabs from that same file.</div>', unsafe_allow_html=True)
+
 
 with st.sidebar:
     st.header("Data")
-    source_mode = st.radio("Source", ["Bundled workbook", "Upload workbook"])
-    if source_mode == "Bundled workbook":
+    source_mode = st.radio("Source", ["Bundled demo workbook", "Upload one workbook"])
+    if source_mode == "Bundled demo workbook":
         source = DATA_FILE
         st.success("Workbook loaded")
     else:
-        uploaded = st.file_uploader("Upload Excel workbook", type=["xlsx"])
+        uploaded = st.file_uploader("Upload a single Excel workbook containing the required sheets", type=["xlsx"])
         if uploaded is None:
             st.stop()
         source = uploaded

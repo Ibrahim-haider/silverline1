@@ -30,3 +30,14 @@ streamlit run app.py
 ## Deploy
 
 Upload the project to GitHub and deploy `app.py` on Streamlit Community Cloud.
+
+
+## Single-file workflow
+
+This version requires only **one Excel workbook**.
+
+The workbook must contain:
+- `Working Sheet`
+- `Raw Data`
+
+The included demo workbook is `data/Ibrahim.xlsx`. You do not need separate MTD and YTD files.
