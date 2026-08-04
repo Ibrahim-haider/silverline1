@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     password_salt TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('admin','partner','branch_manager')),
+    role TEXT NOT NULL CHECK(role IN ('admin','partner')),
     partner_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(partner_id) REFERENCES partners(id)
